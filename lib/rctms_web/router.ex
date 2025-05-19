@@ -1,31 +1,28 @@
-# lib/rctms_web/router.ex
 defmodule RCTMSWeb.Router do
   use RCTMSWeb, :router
 
   pipeline :api do
     plug :accepts, ["json"]
-  end
-
-  pipeline :graphql do
     plug RCTMSWeb.Schema.Context
   end
 
-  # Remove all REST API endpoints
-  # scope "/api", RCTMSWeb do
-  #   pipe_through :api
-  #   ...
-  # end
-
-  # Keep only GraphQL endpoints
+  # Keep only the GraphQL routes
   scope "/api" do
-    pipe_through [:api, :graphql]
+    pipe_through :api
 
+    # GraphQL endpoint
     forward "/graphql", Absinthe.Plug,
       schema: RCTMSWeb.Schema
 
-    forward "/graphiql", Absinthe.Plug.GraphiQL,
-      schema: RCTMSWeb.Schema,
-      socket: RCTMSWeb.UserSocket,
-      interface: :playground
+    # GraphiQL playground (for development)
+    if Mix.env() == :dev do
+      forward "/graphiql", Absinthe.Plug.GraphiQL,
+        schema: RCTMSWeb.Schema,
+        interface: :playground,
+        socket: RCTMSWeb.UserSocket
+    end
   end
+
+  # If you have any browser-related routes, you can keep them
+  # Otherwise, you can remove the browser pipeline and routes too
 end

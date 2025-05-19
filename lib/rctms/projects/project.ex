@@ -9,7 +9,7 @@ defmodule RCTMS.Projects.Project do
     belongs_to :owner, RCTMS.Accounts.User
     has_many :tasks, RCTMS.Tasks.Task
 
-    timestamps()
+    timestamps(type: :utc_datetime)  # Changed from default type
   end
 
   @doc false

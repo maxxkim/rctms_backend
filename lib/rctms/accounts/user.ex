@@ -13,9 +13,24 @@ defmodule RCTMS.Accounts.User do
     has_many :created_tasks, RCTMS.Tasks.Task, foreign_key: :creator_id
     has_many :comments, RCTMS.Collaboration.Comment
 
-    timestamps()
+    timestamps(type: :utc_datetime)  # Changed from default type
   end
 
+
+  @spec changeset(
+          {map(),
+           %{
+             optional(atom()) =>
+               atom()
+               | {:array | :assoc | :embed | :in | :map | :parameterized | :supertype | :try,
+                  any()}
+           }}
+          | %{
+              :__struct__ => atom() | %{:__changeset__ => any(), optional(any()) => any()},
+              optional(atom()) => any()
+            },
+          :invalid | %{optional(:__struct__) => none(), optional(atom() | binary()) => any()}
+        ) :: Ecto.Changeset.t()
   @doc false
   def changeset(user, attrs) do
     user

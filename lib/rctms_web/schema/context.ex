@@ -12,9 +12,6 @@ defmodule RCTMSWeb.Schema.Context do
     Absinthe.Plug.put_options(conn, context: context)
   end
 
-  @doc """
-  Return the current user context based on the authorization header
-  """
   def build_context(conn) do
     with ["Bearer " <> token] <- get_req_header(conn, "authorization"),
          {:ok, claims} <- Guardian.decode_and_verify(token),

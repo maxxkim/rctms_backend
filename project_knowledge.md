@@ -1,5 +1,5 @@
 # Project Knowledge Base
-Generated on Mon May 19 15:05:41 MSK 2025
+Generated on Mon May 19 17:21:58 MSK 2025
 
 ## Table of Contents
 - [Project Structure](#project-structure)
@@ -29,20 +29,12 @@ Generated on Mon May 19 15:05:41 MSK 2025
 ./lib/rctms_web/components/layouts.ex
 ./lib/rctms_web/components/layouts/app.html.heex
 ./lib/rctms_web/components/layouts/root.html.heex
-./lib/rctms_web/controllers/comment_controller.ex
-./lib/rctms_web/controllers/comment_json.ex
 ./lib/rctms_web/controllers/error_html.ex
 ./lib/rctms_web/controllers/error_json.ex
 ./lib/rctms_web/controllers/fallback_controller.ex
 ./lib/rctms_web/controllers/page_controller.ex
 ./lib/rctms_web/controllers/page_html.ex
 ./lib/rctms_web/controllers/page_html/home.html.heex
-./lib/rctms_web/controllers/project_controller.ex
-./lib/rctms_web/controllers/project_json.ex
-./lib/rctms_web/controllers/task_controller.ex
-./lib/rctms_web/controllers/task_json.ex
-./lib/rctms_web/controllers/user_controller.ex
-./lib/rctms_web/controllers/user_json.ex
 ./lib/rctms_web/endpoint.ex
 ./lib/rctms_web/gettext.ex
 ./lib/rctms_web/router.ex
@@ -80,6 +72,7 @@ Generated on Mon May 19 15:05:41 MSK 2025
 ./priv/repo/migrations/20250515132814_create_projects.exs
 ./priv/repo/migrations/20250515132828_create_tasks.exs
 ./priv/repo/migrations/20250515132836_create_comments.exs
+./priv/repo/migrations/20250519133300_convert_timestamps_to_utc.exs
 ./priv/repo/seeds.exs
 ./test/rctms_web/controllers/error_html_test.exs
 ./test/rctms_web/controllers/error_json_test.exs
@@ -158,7 +151,8 @@ defmodule RCTMS.MixProject do
       {:absinthe_plug, "~> 1.5"},
       {:absinthe_phoenix, "~> 2.0"},
       {:absinthe_relay, "~> 1.5"},
-      {:dataloader, "~> 1.0"}
+      {:dataloader, "~> 1.0"},
+      {:scrivener_ecto, "~> 2.7"}
     ]
   end
 
@@ -571,6 +565,41 @@ defmodule RCTMS.Repo.Migrations.CreateComments do
 end
 ```
 
+#### 20250519133300_convert_timestamps_to_utc.exs
+```elixir
+defmodule RCTMS.Repo.Migrations.ConvertTimestampsToUtc do
+  use Ecto.Migration
+
+  def change do
+    # Users table
+    alter table(:users) do
+      modify :inserted_at, :utc_datetime, from: :naive_datetime
+      modify :updated_at, :utc_datetime, from: :naive_datetime
+    end
+
+    # Projects table
+    alter table(:projects) do
+      modify :inserted_at, :utc_datetime, from: :naive_datetime
+      modify :updated_at, :utc_datetime, from: :naive_datetime
+    end
+
+    # Tasks table
+    alter table(:tasks) do
+      # Also convert the due_date if present
+      modify :due_date, :utc_datetime, from: :naive_datetime, null: true
+      modify :inserted_at, :utc_datetime, from: :naive_datetime
+      modify :updated_at, :utc_datetime, from: :naive_datetime
+    end
+
+    # Comments table
+    alter table(:comments) do
+      modify :inserted_at, :utc_datetime, from: :naive_datetime
+      modify :updated_at, :utc_datetime, from: :naive_datetime
+    end
+  end
+end
+```
+
 ### Schema Files
 #### user.ex
 ```elixir
@@ -875,6 +904,8 @@ end
 
 #### project.ex
 ```elixir
+# lib/rctms_web/schema/types/project.ex (исправленная версия)
+
 defmodule RCTMSWeb.Schema.Types.Project do
   use Absinthe.Schema.Notation
   import Absinthe.Resolution.Helpers, only: [dataloader: 1]
@@ -904,7 +935,23 @@ defmodule RCTMSWeb.Schema.Types.Project do
     field :description, :string
   end
 
-  # Project Queries
+  # Input for filtering and pagination
+  input_object :project_filter_input do
+    field :search, :string
+    field :page, :integer, default_value: 1
+    field :per_page, :integer, default_value: 10
+  end
+
+  @desc "Paginated projects"
+  object :paginated_projects do
+    field :entries, list_of(:project)
+    field :page_number, :integer
+    field :page_size, :integer
+    field :total_entries, :integer
+    field :total_pages, :integer
+  end
+
+  # Project Queries - определяем объект полностью
   object :project_queries do
     @desc "Get a specific project"
     field :project, :project do
@@ -915,6 +962,12 @@ defmodule RCTMSWeb.Schema.Types.Project do
     @desc "List all projects for the current user"
     field :projects, list_of(:project) do
       resolve &RCTMSWeb.Resolvers.ProjectResolver.list_projects/2
+    end
+
+    @desc "List all projects for the current user with filtering and pagination"
+    field :projects_paginated, :paginated_projects do
+      arg :filter, :project_filter_input, default_value: %{}
+      resolve &RCTMSWeb.Resolvers.ProjectResolver.list_projects_paginated/2
     end
   end
 
@@ -1510,9 +1563,19 @@ defmodule RCTMSWeb.Resolvers.ProjectResolver do
   @doc """
   List all projects for the current user
   """
-  def list_projects(_args, %{context: %{current_user: current_user}}) do
-    projects = Projects.list_user_projects(current_user.id)
-    {:ok, projects}
+  def list_projects(%{filter: filter}, %{context: %{current_user: current_user}}) do
+    # Преобразование атомов в строки для Projects.list_user_projects_paginated
+    string_params = for {k, v} <- filter, into: %{}, do: {Atom.to_string(k), v}
+
+    projects = Projects.list_user_projects_paginated(current_user.id, string_params)
+
+    {:ok, %{
+      entries: projects.entries,
+      page_number: projects.page_number,
+      page_size: projects.page_size,
+      total_entries: projects.total_entries,
+      total_pages: projects.total_pages
+    }}
   end
 
   def list_projects(_args, _resolution) do
@@ -1528,8 +1591,9 @@ defmodule RCTMSWeb.Resolvers.ProjectResolver do
 
     case Projects.create_project(project_params) do
       {:ok, project} ->
-        # Publish the event for subscriptions
-        Absinthe.Subscription.publish(RCTMSWeb.Endpoint, project, project_created: current_user.id)
+        # Comment out or remove this line:
+        # Absinthe.Subscription.publish(RCTMSWeb.Endpoint, project, project_created: current_user.id)
+
         {:ok, project}
 
       {:error, changeset} ->
@@ -1609,6 +1673,31 @@ defmodule RCTMSWeb.Resolvers.ProjectResolver do
     |> Enum.map(fn {k, v} -> "#{k}: #{v}" end)
     |> Enum.join(", ")
   end
+
+ # lib/rctms_web/schema/resolvers/project_resolver.ex (добавить метод)
+
+@doc """
+List projects with pagination
+"""
+def list_projects_paginated(%{filter: filter}, %{context: %{current_user: current_user}}) do
+  # Преобразование атомов в строки для Projects.list_user_projects_paginated
+  string_params = for {k, v} <- filter, into: %{}, do: {Atom.to_string(k), v}
+
+  projects = Projects.list_user_projects_paginated(current_user.id, string_params)
+
+  {:ok, %{
+    entries: projects.entries,
+    page_number: projects.page_number,
+    page_size: projects.page_size,
+    total_entries: projects.total_entries,
+    total_pages: projects.total_pages
+  }}
+end
+
+def list_projects_paginated(_args, _resolution) do
+  {:error, "Not authenticated"}
+end
+
 end
 ```
 
@@ -1657,6 +1746,7 @@ defmodule RCTMSWeb.Schema do
       |> Dataloader.add_source(RCTMS.Collaboration, RCTMS.Collaboration.data())
 
     Map.put(ctx, :loader, loader)
+    |> Map.put(:pubsub, RCTMS.PubSub)
   end
 
   def plugins do
@@ -1667,6 +1757,7 @@ end
 
 #### context.ex
 ```elixir
+# lib/rctms_web/schema/context.ex
 defmodule RCTMSWeb.Schema.Context do
   @behaviour Plug
 
@@ -1680,9 +1771,6 @@ defmodule RCTMSWeb.Schema.Context do
     Absinthe.Plug.put_options(conn, context: context)
   end
 
-  @doc """
-  Return the current user context based on the authorization header
-  """
   def build_context(conn) do
     with ["Bearer " <> token] <- get_req_header(conn, "authorization"),
          {:ok, claims} <- Guardian.decode_and_verify(token),
@@ -1696,194 +1784,6 @@ end
 ```
 
 ## Controllers
-### user_controller.ex
-```elixir
-# lib/rctms_web/controllers/user_controller.ex
-defmodule RCTMSWeb.UserController do
-  use RCTMSWeb, :controller
-
-  alias RCTMS.Accounts
-  alias RCTMS.Accounts.User
-  alias RCTMS.Accounts.Guardian
-
-  action_fallback RCTMSWeb.FallbackController
-
-  def create(conn, %{"user" => user_params}) do
-    with {:ok, %User{} = user} <- Accounts.create_user(user_params),
-         {:ok, token, _claims} <- Guardian.encode_and_sign(user) do
-      conn
-      |> put_status(:created)
-      |> render(:user, user: user, token: token)
-    end
-  end
-
-  def sign_in(conn, %{"email" => email, "password" => password}) do
-    with {:ok, user} <- Accounts.authenticate_user(email, password),
-         {:ok, token, _claims} <- Guardian.encode_and_sign(user) do
-      conn
-      |> put_status(:ok)
-      |> render(:user, user: user, token: token)
-    end
-  end
-end
-```
-
-### project_controller.ex
-```elixir
-# lib/rctms_web/controllers/project_controller.ex
-defmodule RCTMSWeb.ProjectController do
-  use RCTMSWeb, :controller
-
-  alias RCTMS.Projects
-  alias RCTMS.Projects.Project
-  alias RCTMS.Accounts.Guardian
-
-  action_fallback RCTMSWeb.FallbackController
-
-  def index(conn, _params) do
-    # Get the current user from Guardian
-    current_user = Guardian.Plug.current_resource(conn)
-    projects = Projects.list_user_projects(current_user.id)
-    render(conn, :index, projects: projects)
-  end
-
-  def create(conn, %{"project" => project_params}) do
-    # Add the current user's ID as the owner_id
-    current_user = Guardian.Plug.current_resource(conn)
-    project_params = Map.put(project_params, "owner_id", current_user.id)
-
-    with {:ok, %Project{} = project} <- Projects.create_project(project_params) do
-      project = RCTMS.Repo.preload(project, :owner)
-
-      conn
-      |> put_status(:created)
-      |> put_resp_header("location", ~p"/api/projects/#{project}")
-      |> render(:show, project: project)
-    end
-  end
-
-  def show(conn, %{"id" => id}) do
-    project = Projects.get_project_with_details(id)
-    render(conn, :show, project: project)
-  end
-
-  def update(conn, %{"id" => id, "project" => project_params}) do
-    project = Projects.get_project(id)
-    current_user = Guardian.Plug.current_resource(conn)
-
-    # Verify that the current user is the owner
-    if project.owner_id != current_user.id do
-      conn
-      |> put_status(:forbidden)
-      |> put_view(json: RCTMSWeb.ErrorJSON)
-      |> render(:"403", message: "You don't have permission to edit this project")
-    else
-      with {:ok, %Project{} = project} <- Projects.update_project(project, project_params) do
-        project = RCTMS.Repo.preload(project, :owner)
-        render(conn, :show, project: project)
-      end
-    end
-  end
-
-  def delete(conn, %{"id" => id}) do
-    project = Projects.get_project(id)
-    current_user = Guardian.Plug.current_resource(conn)
-
-    # Verify that the current user is the owner
-    if project.owner_id != current_user.id do
-      conn
-      |> put_status(:forbidden)
-      |> put_view(json: RCTMSWeb.ErrorJSON)
-      |> render(:"403", message: "You don't have permission to delete this project")
-    else
-      with {:ok, %Project{}} <- Projects.delete_project(project) do
-        send_resp(conn, :no_content, "")
-      end
-    end
-  end
-end
-```
-
-### task_controller.ex
-```elixir
-defmodule RCTMSWeb.TaskController do
-  use RCTMSWeb, :controller
-
-  alias RCTMS.Tasks
-  alias RCTMS.Tasks.Task
-  alias RCTMS.Accounts.Guardian
-
-  action_fallback RCTMSWeb.FallbackController
-
-  def index(conn, %{"project_id" => project_id}) do
-    tasks = Tasks.list_project_tasks(project_id)
-    render(conn, :index, tasks: tasks)
-  end
-
-  def index(conn, _params) do
-    # Get the current user from Guardian
-    current_user = Guardian.Plug.current_resource(conn)
-    tasks = Tasks.list_assigned_tasks(current_user.id)
-    render(conn, :index, tasks: tasks)
-  end
-
-  def create(conn, %{"task" => task_params}) do
-    # Add the current user's ID as the creator_id
-    current_user = Guardian.Plug.current_resource(conn)
-    task_params = Map.put(task_params, "creator_id", current_user.id)
-
-    with {:ok, %Task{} = task} <- Tasks.create_task(task_params) do
-      task = RCTMS.Repo.preload(task, [:assignee, :creator, :project])
-
-      conn
-      |> put_status(:created)
-      |> put_resp_header("location", ~p"/api/tasks/#{task}")
-      |> render(:show, task: task)
-    end
-  end
-
-  def show(conn, %{"id" => id}) do
-    task = Tasks.get_task_with_details(id)
-    render(conn, :show, task: task)
-  end
-
-  def update(conn, %{"id" => id, "task" => task_params}) do
-    task = Tasks.get_task(id)
-    current_user = Guardian.Plug.current_resource(conn)
-
-    # Check if the current user is the creator or the assignee
-    if task.creator_id != current_user.id && task.assignee_id != current_user.id do
-      conn
-      |> put_status(:forbidden)
-      |> put_view(json: RCTMSWeb.ErrorJSON)
-      |> render(:"403", message: "You don't have permission to edit this task")
-    else
-      with {:ok, %Task{} = task} <- Tasks.update_task(task, task_params) do
-        task = RCTMS.Repo.preload(task, [:assignee, :creator, :project])
-        render(conn, :show, task: task)
-      end
-    end
-  end
-
-  def delete(conn, %{"id" => id}) do
-    task = Tasks.get_task(id)
-    current_user = Guardian.Plug.current_resource(conn)
-
-    # Check if the current user is the creator
-    if task.creator_id != current_user.id do
-      conn
-      |> put_status(:forbidden)
-      |> put_view(json: RCTMSWeb.ErrorJSON)
-      |> render(:"403", message: "You don't have permission to delete this task")
-    else
-      with {:ok, %Task{}} <- Tasks.delete_task(task) do
-        send_resp(conn, :no_content, "")
-      end
-    end
-  end
-end
-```
-
 ### fallback_controller.ex
 ```elixir
 # lib/rctms_web/controllers/fallback_controller.ex
@@ -1916,79 +1816,6 @@ defmodule RCTMSWeb.FallbackController do
 end
 ```
 
-### comment_controller.ex
-```elixir
-# lib/rctms_web/controllers/comment_controller.ex
-defmodule RCTMSWeb.CommentController do
-  use RCTMSWeb, :controller
-
-  alias RCTMS.Collaboration
-  alias RCTMS.Collaboration.Comment
-  alias RCTMS.Accounts.Guardian
-
-  action_fallback RCTMSWeb.FallbackController
-
-  def index(conn, %{"task_id" => task_id}) do
-    comments = Collaboration.list_task_comments(task_id)
-    render(conn, :index, comments: comments)
-  end
-
-  def create(conn, %{"comment" => comment_params}) do
-    # Add the current user's ID as the user_id
-    current_user = Guardian.Plug.current_resource(conn)
-    comment_params = Map.put(comment_params, "user_id", current_user.id)
-
-    with {:ok, %Comment{} = comment} <- Collaboration.create_comment(comment_params) do
-      comment = RCTMS.Repo.preload(comment, :user)
-
-      conn
-      |> put_status(:created)
-      |> put_resp_header("location", ~p"/api/comments/#{comment}")
-      |> render(:show, comment: comment)
-    end
-  end
-
-  def show(conn, %{"id" => id}) do
-    comment = Collaboration.get_comment!(id)
-    render(conn, :show, comment: comment)
-  end
-
-  def update(conn, %{"id" => id, "comment" => comment_params}) do
-    comment = Collaboration.get_comment!(id)
-    current_user = Guardian.Plug.current_resource(conn)
-
-    # Verify that the current user is the author
-    if comment.user_id != current_user.id do
-      conn
-      |> put_status(:forbidden)
-      |> put_view(json: RCTMSWeb.ErrorJSON)
-      |> render(:"403", message: "You don't have permission to edit this comment")
-    else
-      with {:ok, %Comment{} = comment} <- Collaboration.update_comment(comment, comment_params) do
-        render(conn, :show, comment: comment)
-      end
-    end
-  end
-
-  def delete(conn, %{"id" => id}) do
-    comment = Collaboration.get_comment!(id)
-    current_user = Guardian.Plug.current_resource(conn)
-
-    # Verify that the current user is the author
-    if comment.user_id != current_user.id do
-      conn
-      |> put_status(:forbidden)
-      |> put_view(json: RCTMSWeb.ErrorJSON)
-      |> render(:"403", message: "You don't have permission to delete this comment")
-    else
-      with {:ok, %Comment{}} <- Collaboration.delete_comment(comment) do
-        send_resp(conn, :no_content, "")
-      end
-    end
-  end
-end
-```
-
 ### page_controller.ex
 ```elixir
 defmodule RCTMSWeb.PageController do
@@ -2015,7 +1842,7 @@ defmodule RCTMS.Collaboration.Comment do
     belongs_to :task, RCTMS.Tasks.Task
     belongs_to :user, RCTMS.Accounts.User
 
-    timestamps()
+    timestamps(type: :utc_datetime)  # Changed from default type
   end
 
   @doc false
@@ -2077,7 +1904,7 @@ defmodule RCTMS.Projects.Project do
     belongs_to :owner, RCTMS.Accounts.User
     has_many :tasks, RCTMS.Tasks.Task
 
-    timestamps()
+    timestamps(type: :utc_datetime)  # Changed from default type
   end
 
   @doc false
@@ -2381,6 +2208,51 @@ defmodule RCTMS.Projects do
   def query(queryable, _params) do
     queryable
   end
+ @doc """
+  Returns a paginated list of projects.
+
+  ## Examples
+
+      iex> list_projects_paginated(%{"page" => 1, "per_page" => 10})
+      %{entries: [%Project{}, ...], page_number: 1, page_size: 10, total_entries: 30, total_pages: 3}
+
+  """
+  def list_projects_paginated(params \\ %{}) do
+    page = Map.get(params, "page", 1)
+    per_page = Map.get(params, "per_page", 10)
+
+    Project
+    |> filter_by_name(params)
+    |> order_by([p], desc: p.inserted_at)
+    |> Repo.paginate(page: page, page_size: per_page)
+  end
+
+  @doc """
+  Returns a paginated list of projects for a user.
+
+  ## Examples
+
+      iex> list_user_projects_paginated(user_id, %{"page" => 1, "per_page" => 10})
+      %{entries: [%Project{}, ...], page_number: 1, page_size: 10, total_entries: 15, total_pages: 2}
+
+  """
+  def list_user_projects_paginated(user_id, params \\ %{}) do
+    page = Map.get(params, "page", 1)
+    per_page = Map.get(params, "per_page", 10)
+
+    Project
+    |> where([p], p.owner_id == ^user_id)
+    |> filter_by_name(params)
+    |> order_by([p], desc: p.inserted_at)
+    |> Repo.paginate(page: page, page_size: per_page)
+  end
+
+  defp filter_by_name(query, %{"search" => search}) when is_binary(search) and search != "" do
+    search_term = "%#{search}%"
+    where(query, [p], ilike(p.name, ^search_term) or ilike(p.description, ^search_term))
+  end
+
+  defp filter_by_name(query, _), do: query
 end
 ```
 
@@ -2401,9 +2273,24 @@ defmodule RCTMS.Accounts.User do
     has_many :created_tasks, RCTMS.Tasks.Task, foreign_key: :creator_id
     has_many :comments, RCTMS.Collaboration.Comment
 
-    timestamps()
+    timestamps(type: :utc_datetime)  # Changed from default type
   end
 
+
+  @spec changeset(
+          {map(),
+           %{
+             optional(atom()) =>
+               atom()
+               | {:array | :assoc | :embed | :in | :map | :parameterized | :supertype | :try,
+                  any()}
+           }}
+          | %{
+              :__struct__ => atom() | %{:__changeset__ => any(), optional(any()) => any()},
+              optional(atom()) => any()
+            },
+          :invalid | %{optional(:__struct__) => none(), optional(atom() | binary()) => any()}
+        ) :: Ecto.Changeset.t()
   @doc false
   def changeset(user, attrs) do
     user
@@ -2886,6 +2773,7 @@ defmodule RCTMSWeb.Schema do
       |> Dataloader.add_source(RCTMS.Collaboration, RCTMS.Collaboration.data())
 
     Map.put(ctx, :loader, loader)
+    |> Map.put(:pubsub, RCTMS.PubSub)
   end
 
   def plugins do

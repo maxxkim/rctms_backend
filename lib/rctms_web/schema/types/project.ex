@@ -1,3 +1,5 @@
+# lib/rctms_web/schema/types/project.ex (исправленная версия)
+
 defmodule RCTMSWeb.Schema.Types.Project do
   use Absinthe.Schema.Notation
   import Absinthe.Resolution.Helpers, only: [dataloader: 1]
@@ -27,7 +29,23 @@ defmodule RCTMSWeb.Schema.Types.Project do
     field :description, :string
   end
 
-  # Project Queries
+  # Input for filtering and pagination
+  input_object :project_filter_input do
+    field :search, :string
+    field :page, :integer, default_value: 1
+    field :per_page, :integer, default_value: 10
+  end
+
+  @desc "Paginated projects"
+  object :paginated_projects do
+    field :entries, list_of(:project)
+    field :page_number, :integer
+    field :page_size, :integer
+    field :total_entries, :integer
+    field :total_pages, :integer
+  end
+
+  # Project Queries - определяем объект полностью
   object :project_queries do
     @desc "Get a specific project"
     field :project, :project do
@@ -38,6 +56,12 @@ defmodule RCTMSWeb.Schema.Types.Project do
     @desc "List all projects for the current user"
     field :projects, list_of(:project) do
       resolve &RCTMSWeb.Resolvers.ProjectResolver.list_projects/2
+    end
+
+    @desc "List all projects for the current user with filtering and pagination"
+    field :projects_paginated, :paginated_projects do
+      arg :filter, :project_filter_input, default_value: %{}
+      resolve &RCTMSWeb.Resolvers.ProjectResolver.list_projects_paginated/2
     end
   end
 

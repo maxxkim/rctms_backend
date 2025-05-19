@@ -41,6 +41,7 @@ defmodule RCTMSWeb.Schema do
       |> Dataloader.add_source(RCTMS.Collaboration, RCTMS.Collaboration.data())
 
     Map.put(ctx, :loader, loader)
+    |> Map.put(:pubsub, RCTMS.PubSub)
   end
 
   def plugins do

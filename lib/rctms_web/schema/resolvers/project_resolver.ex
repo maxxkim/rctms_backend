@@ -28,9 +28,19 @@ defmodule RCTMSWeb.Resolvers.ProjectResolver do
   @doc """
   List all projects for the current user
   """
-  def list_projects(_args, %{context: %{current_user: current_user}}) do
-    projects = Projects.list_user_projects(current_user.id)
-    {:ok, projects}
+  def list_projects(%{filter: filter}, %{context: %{current_user: current_user}}) do
+    # Преобразование атомов в строки для Projects.list_user_projects_paginated
+    string_params = for {k, v} <- filter, into: %{}, do: {Atom.to_string(k), v}
+
+    projects = Projects.list_user_projects_paginated(current_user.id, string_params)
+
+    {:ok, %{
+      entries: projects.entries,
+      page_number: projects.page_number,
+      page_size: projects.page_size,
+      total_entries: projects.total_entries,
+      total_pages: projects.total_pages
+    }}
   end
 
   def list_projects(_args, _resolution) do
@@ -46,8 +56,9 @@ defmodule RCTMSWeb.Resolvers.ProjectResolver do
 
     case Projects.create_project(project_params) do
       {:ok, project} ->
-        # Publish the event for subscriptions
-        Absinthe.Subscription.publish(RCTMSWeb.Endpoint, project, project_created: current_user.id)
+        # Comment out or remove this line:
+        # Absinthe.Subscription.publish(RCTMSWeb.Endpoint, project, project_created: current_user.id)
+
         {:ok, project}
 
       {:error, changeset} ->
@@ -127,4 +138,29 @@ defmodule RCTMSWeb.Resolvers.ProjectResolver do
     |> Enum.map(fn {k, v} -> "#{k}: #{v}" end)
     |> Enum.join(", ")
   end
+
+ # lib/rctms_web/schema/resolvers/project_resolver.ex (добавить метод)
+
+@doc """
+List projects with pagination
+"""
+def list_projects_paginated(%{filter: filter}, %{context: %{current_user: current_user}}) do
+  # Преобразование атомов в строки для Projects.list_user_projects_paginated
+  string_params = for {k, v} <- filter, into: %{}, do: {Atom.to_string(k), v}
+
+  projects = Projects.list_user_projects_paginated(current_user.id, string_params)
+
+  {:ok, %{
+    entries: projects.entries,
+    page_number: projects.page_number,
+    page_size: projects.page_size,
+    total_entries: projects.total_entries,
+    total_pages: projects.total_pages
+  }}
+end
+
+def list_projects_paginated(_args, _resolution) do
+  {:error, "Not authenticated"}
+end
+
 end

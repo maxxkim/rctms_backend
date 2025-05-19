@@ -64,7 +64,8 @@ defmodule RCTMS.MixProject do
       {:absinthe_plug, "~> 1.5"},
       {:absinthe_phoenix, "~> 2.0"},
       {:absinthe_relay, "~> 1.5"},
-      {:dataloader, "~> 1.0"}
+      {:dataloader, "~> 1.0"},
+      {:scrivener_ecto, "~> 2.7"}
     ]
   end
 

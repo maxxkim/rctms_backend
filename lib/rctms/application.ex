@@ -1,8 +1,5 @@
+# lib/rctms/application.ex
 defmodule RCTMS.Application do
-  # See https://hexdocs.pm/elixir/Application.html
-  # for more information on OTP Applications
-  @moduledoc false
-
   use Application
 
   @impl true
@@ -10,19 +7,19 @@ defmodule RCTMS.Application do
     children = [
       # Start the Telemetry supervisor
       RCTMSWeb.Telemetry,
-      # Start the PubSub system
+      # Start the Ecto repository
+      RCTMS.Repo,
+      # Start the PubSub system with a name
       {Phoenix.PubSub, name: RCTMS.PubSub},
       # Start Finch
       {Finch, name: RCTMS.Finch},
-      # Start the Ecto repository
-      RCTMS.Repo,
-      # Start the endpoint when the application starts
+      # Start the Endpoint (http/https)
       RCTMSWeb.Endpoint,
-      # Start the presence tracker
-      RCTMSWeb.Presence,
-      # Start a supervisor for dynamic creation of task buckets
-      {DynamicSupervisor, name: RCTMS.TaskSupervisor, strategy: :one_for_one}
-      # Add any other supervisors or workers here
+      # Start a worker by calling: RCTMS.Worker.start_link(arg)
+      # {RCTMS.Worker, arg}
+
+      # Add Absinthe's subscription
+      {Absinthe.Subscription, RCTMSWeb.Endpoint}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

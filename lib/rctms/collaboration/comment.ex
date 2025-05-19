@@ -8,7 +8,7 @@ defmodule RCTMS.Collaboration.Comment do
     belongs_to :task, RCTMS.Tasks.Task
     belongs_to :user, RCTMS.Accounts.User
 
-    timestamps()
+    timestamps(type: :utc_datetime)  # Changed from default type
   end
 
   @doc false
