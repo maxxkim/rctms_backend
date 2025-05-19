@@ -9,7 +9,7 @@
 
 ## 🔗 Связанные проекты
 
-- [RCTMS Mobile App](https://github.com/your-username/rctms-mobile) - Flutter мобильный клиент для данного бэкенда
+- [RCTMS Mobile App]([https://github.com/your-username/rctms-mobile](https://github.com/maxxkim/rctms_app)) - Flutter мобильный клиент для данного бэкенда
 
 ## 📖 Обзор проекта
 
